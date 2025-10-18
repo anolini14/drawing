@@ -6,14 +6,36 @@
   <title>擦除查看（Scratch to Reveal）Demo</title>
   <style>
     :root{--maxw: 900px;}
-    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif;background:#0e0e10;color:#e8e8ea;}
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif;
+      background:#0e0e10;
+      color:#e8e8ea;
+    }
     .wrap{max-width:var(--maxw);margin:24px auto;padding:0 16px;}
     h1{font-size:20px;margin:0 0 12px;}
     .toolbar{display:flex;gap:.75rem;align-items:center;margin:.5rem 0 12px;}
     .toolbar label{display:flex;gap:.5rem;align-items:center;opacity:.9}
-    .toolbar button{padding:.4rem .75rem;border:0;border-radius:.5rem;background:#2b2b31;color:#fff;cursor:pointer}
+    .toolbar button{
+      padding:.4rem .75rem;
+      border:0;
+      border-radius:.5rem;
+      background:#2b2b31;
+      color:#fff;
+      cursor:pointer;
+    }
     .toolbar button:hover{background:#3a3a43}
-    #stage{position:relative;width:100%;aspect-ratio:16/9;background:#111;user-select:none;touch-action:none;border-radius:12px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+    #stage{
+      position:relative;
+      width:100%;
+      aspect-ratio:16/9;
+      background:#111;
+      user-select:none;
+      touch-action:none;
+      border-radius:12px;
+      overflow:hidden;
+      box-shadow:0 6px 24px rgba(0,0,0,.35)
+    }
     #cv{position:absolute;inset:0;width:100%;height:100%;display:block}
     .hint{opacity:.75;margin-top:8px;font-size:14px}
     .footer{opacity:.55;font-size:12px;margin-top:14px}
@@ -36,15 +58,21 @@
       <canvas id="cv"></canvas>
     </div>
 
-    <div class="hint">在画面上拖动/触摸即可“擦除”显示底图。想换自己的图片，改脚本顶部两行 <code>BASE_URL</code> 与 <code>TOP_URL</code>。</div>
-    <div class="footer">适用于桌面与移动端；无外部依赖，可直接托管到 GitHub Pages/Netlify/Vercel。</div>
+    <div class="hint">
+      在画面上拖动/触摸即可“擦除”显示底图。<br>
+      你可以在仓库中新建 <code>img</code> 文件夹并放入 <code>base.jpg</code> 和 <code>top.png</code>，
+      这两个文件会被自动加载。
+    </div>
+    <div class="footer">
+      适用于桌面与移动端；无外部依赖，可直接托管到 GitHub Pages/Netlify/Vercel。
+    </div>
   </div>
 
   <script>
   (function(){
-    // === 在这里替换你的图片直链（保持同一宽高比更佳） ===
-    const BASE_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/Fronalpstock_big.jpg/1280px-Fronalpstock_big.jpg"; // 底图
-    const TOP_URL  = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Mt._Fuji_and_Chureito_Pagoda.jpg/1280px-Mt._Fuji_and_Chureito_Pagoda.jpg"; // 上层（被擦掉）
+    // === 从本仓库相对路径加载（不跨域） ===
+    const BASE_URL = "./img/base.jpg"; // 底图
+    const TOP_URL  = "./img/top.png";  // 上层图
 
     const cv = document.getElementById('cv');
     const ctx = cv.getContext('2d');
@@ -55,7 +83,6 @@
     const pct = document.getElementById('pct');
 
     let baseImg = new Image(), topImg = new Image();
-    baseImg.crossOrigin = topImg.crossOrigin = "anonymous";
     let drawing=false, lastX=0, lastY=0, revealed=false;
 
     function dpr(){ return window.devicePixelRatio || 1; }
@@ -80,7 +107,6 @@
     }
 
     function paintAll(){
-      // 先覆盖上层；再把底图放到下层
       ctx.globalCompositeOperation = 'source-over';
       ctx.clearRect(0,0,cv.width,cv.height);
       drawCover(topImg);
@@ -101,81 +127,91 @@
     function start(e){
       e.preventDefault();
       drawing=true;
-      const {x,y} = getPos(e);
+      const {x,y}=getPos(e);
       lastX=x; lastY=y;
       eraseDot(x,y);
     }
+
     function move(e){
       if(!drawing) return;
-      const {x,y} = getPos(e);
+      const {x,y}=getPos(e);
       ctx.save();
-      ctx.globalCompositeOperation = 'destination-out';
+      ctx.globalCompositeOperation='destination-out';
       ctx.lineCap='round'; ctx.lineJoin='round';
-      ctx.lineWidth = Number(brush.value);
+      ctx.lineWidth=Number(brush.value);
       ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(x,y); ctx.stroke();
       ctx.restore();
       lastX=x; lastY=y;
     }
+
     function end(){ drawing=false; throttleUpdate(); }
 
     function eraseDot(x,y){
       ctx.save();
-      ctx.globalCompositeOperation = 'destination-out';
+      ctx.globalCompositeOperation='destination-out';
       ctx.beginPath();
-      ctx.arc(x,y, Number(brush.value)/2, 0, Math.PI*2);
+      ctx.arc(x,y,Number(brush.value)/2,0,Math.PI*2);
       ctx.fill();
       ctx.restore();
     }
 
     function toggleAll(){
       const rect = stage.getBoundingClientRect();
-      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalCompositeOperation='source-over';
       if(!revealed){
-        ctx.clearRect(0,0,rect.width,rect.height); // 全擦
+        ctx.clearRect(0,0,rect.width,rect.height);
         revealed=true;
       }else{
-        paintAll(); revealed=false;
+        paintAll();
+        revealed=false;
       }
       updatePercent();
     }
 
-    // 估算已擦除比例（降采样）
+    // 估算擦除比例
     function updatePercent(){
-      const r = dpr();
-      const w = Math.floor(cv.width / r), h = Math.floor(cv.height / r);
-      const step = 8;
-      const data = ctx.getImageData(0,0,w,h).data;
-      let transparent=0, total=0;
+      const r=dpr();
+      const w=Math.floor(cv.width/r),h=Math.floor(cv.height/r);
+      const step=8;
+      const data=ctx.getImageData(0,0,w,h).data;
+      let transparent=0,total=0;
       for(let y=0;y<h;y+=step){
         for(let x=0;x<w;x+=step){
-          const a = data[((y*w)+x)*4 + 3];
-          total++; if (a<8) transparent++;
+          const a=data[((y*w)+x)*4+3];
+          total++; if(a<8) transparent++;
         }
       }
-      const per = Math.round(transparent/total*100);
-      pct.textContent = `已擦除 ${per}%`;
+      const per=Math.round(transparent/total*100);
+      pct.textContent=`已擦除 ${per}%`;
     }
-    const throttleUpdate = throttle(updatePercent, 200);
-    function throttle(fn, delay){
-      let t=0; return (...args)=>{ const n=performance.now(); if(n-t>delay){ t=n; fn(...args); } };
+    const throttleUpdate=throttle(updatePercent,200);
+    function throttle(fn,delay){
+      let t=0; return(...args)=>{const n=performance.now();if(n-t>delay){t=n;fn(...args);}};
     }
 
     // 事件
-    cv.addEventListener('pointerdown', start);
-    cv.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', end);
-    cv.addEventListener('touchstart', start, {passive:false});
-    cv.addEventListener('touchmove', move, {passive:false});
-    cv.addEventListener('touchend', end);
-    window.addEventListener('resize', ()=>{ fitCanvas(); paintAll(); });
-    btnReset.addEventListener('click', ()=>{ revealed=false; fitCanvas(); paintAll(); });
-    btnToggle.addEventListener('click', toggleAll);
+    cv.addEventListener('pointerdown',start);
+    cv.addEventListener('pointermove',move);
+    window.addEventListener('pointerup',end);
+    cv.addEventListener('touchstart',start,{passive:false});
+    cv.addEventListener('touchmove',move,{passive:false});
+    cv.addEventListener('touchend',end);
+    window.addEventListener('resize',()=>{fitCanvas();paintAll();});
+    btnReset.addEventListener('click',()=>{revealed=false;fitCanvas();paintAll();});
+    btnToggle.addEventListener('click',toggleAll);
 
-    // 加载
+    // 图片加载
+    function showError(which,url){
+      console.error(`图片加载失败: ${which} (${url})`);
+      pct.textContent='❌ 图片加载失败';
+    }
     let loaded=0;
-    const onload=()=>{ if(++loaded===2){ fitCanvas(); paintAll(); } };
+    const onload=()=>{if(++loaded===2){fitCanvas();paintAll();}};
     baseImg.onload=onload; topImg.onload=onload;
-    baseImg.src=BASE_URL; topImg.src=TOP_URL;
+    baseImg.onerror=()=>showError('底图',BASE_URL);
+    topImg.onerror=()=>showError('上层',TOP_URL);
+    baseImg.src=BASE_URL;
+    topImg.src=TOP_URL;
   })();
   </script>
 </body>
