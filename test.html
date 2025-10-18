@@ -26,5 +26,157 @@
     <div class="toolbar">
       <label>笔刷半径
         <input id="brush" type="range" min="10" max="120" value="48">
- 
-::contentReference[oaicite:0]{index=0}
+      </label>
+      <button id="reset" type="button">重置</button>
+      <button id="toggle" type="button">一键全显/全隐</button>
+      <span id="pct" style="margin-left:auto;opacity:.8;">已擦除 0%</span>
+    </div>
+
+    <div id="stage">
+      <canvas id="cv"></canvas>
+    </div>
+
+    <div class="hint">在画面上拖动/触摸即可“擦除”显示底图。想换自己的图片，改脚本顶部两行 <code>BASE_URL</code> 与 <code>TOP_URL</code>。</div>
+    <div class="footer">适用于桌面与移动端；无外部依赖，可直接托管到 GitHub Pages/Netlify/Vercel。</div>
+  </div>
+
+  <script>
+  (function(){
+    // === 在这里替换你的图片直链（保持同一宽高比更佳） ===
+    const BASE_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/Fronalpstock_big.jpg/1280px-Fronalpstock_big.jpg"; // 底图
+    const TOP_URL  = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6e/Mt._Fuji_and_Chureito_Pagoda.jpg/1280px-Mt._Fuji_and_Chureito_Pagoda.jpg"; // 上层（被擦掉）
+
+    const cv = document.getElementById('cv');
+    const ctx = cv.getContext('2d');
+    const stage = document.getElementById('stage');
+    const brush = document.getElementById('brush');
+    const btnReset = document.getElementById('reset');
+    const btnToggle = document.getElementById('toggle');
+    const pct = document.getElementById('pct');
+
+    let baseImg = new Image(), topImg = new Image();
+    baseImg.crossOrigin = topImg.crossOrigin = "anonymous";
+    let drawing=false, lastX=0, lastY=0, revealed=false;
+
+    function dpr(){ return window.devicePixelRatio || 1; }
+
+    function fitCanvas(){
+      const r = dpr();
+      const rect = stage.getBoundingClientRect();
+      cv.width = Math.round(rect.width * r);
+      cv.height = Math.round(rect.height * r);
+      ctx.setTransform(r,0,0,r,0,0);
+    }
+
+    function drawCover(img){
+      const rect = stage.getBoundingClientRect();
+      const W = rect.width, H = rect.height;
+      const iw = img.naturalWidth, ih = img.naturalHeight;
+      const cr = W/H, ir = iw/ih;
+      let dw, dh, dx, dy;
+      if (ir > cr) { dh = H; dw = ih * cr; dx = (W - dw)/2; dy = 0; }
+      else { dw = W; dh = iw / cr; dx = 0; dy = (H - dh)/2; }
+      ctx.drawImage(img, dx, dy, dw, dh);
+    }
+
+    function paintAll(){
+      // 先覆盖上层；再把底图放到下层
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.clearRect(0,0,cv.width,cv.height);
+      drawCover(topImg);
+      ctx.globalCompositeOperation = 'destination-over';
+      drawCover(baseImg);
+      updatePercent();
+    }
+
+    function getPos(e){
+      const rect = cv.getBoundingClientRect();
+      const p = (e.touches && e.touches[0]) || e;
+      return {
+        x: Math.max(0, Math.min(rect.width,  p.clientX - rect.left)),
+        y: Math.max(0, Math.min(rect.height, p.clientY - rect.top))
+      };
+    }
+
+    function start(e){
+      e.preventDefault();
+      drawing=true;
+      const {x,y} = getPos(e);
+      lastX=x; lastY=y;
+      eraseDot(x,y);
+    }
+    function move(e){
+      if(!drawing) return;
+      const {x,y} = getPos(e);
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.lineWidth = Number(brush.value);
+      ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(x,y); ctx.stroke();
+      ctx.restore();
+      lastX=x; lastY=y;
+    }
+    function end(){ drawing=false; throttleUpdate(); }
+
+    function eraseDot(x,y){
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.beginPath();
+      ctx.arc(x,y, Number(brush.value)/2, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function toggleAll(){
+      const rect = stage.getBoundingClientRect();
+      ctx.globalCompositeOperation = 'source-over';
+      if(!revealed){
+        ctx.clearRect(0,0,rect.width,rect.height); // 全擦
+        revealed=true;
+      }else{
+        paintAll(); revealed=false;
+      }
+      updatePercent();
+    }
+
+    // 估算已擦除比例（降采样）
+    function updatePercent(){
+      const r = dpr();
+      const w = Math.floor(cv.width / r), h = Math.floor(cv.height / r);
+      const step = 8;
+      const data = ctx.getImageData(0,0,w,h).data;
+      let transparent=0, total=0;
+      for(let y=0;y<h;y+=step){
+        for(let x=0;x<w;x+=step){
+          const a = data[((y*w)+x)*4 + 3];
+          total++; if (a<8) transparent++;
+        }
+      }
+      const per = Math.round(transparent/total*100);
+      pct.textContent = `已擦除 ${per}%`;
+    }
+    const throttleUpdate = throttle(updatePercent, 200);
+    function throttle(fn, delay){
+      let t=0; return (...args)=>{ const n=performance.now(); if(n-t>delay){ t=n; fn(...args); } };
+    }
+
+    // 事件
+    cv.addEventListener('pointerdown', start);
+    cv.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    cv.addEventListener('touchstart', start, {passive:false});
+    cv.addEventListener('touchmove', move, {passive:false});
+    cv.addEventListener('touchend', end);
+    window.addEventListener('resize', ()=>{ fitCanvas(); paintAll(); });
+    btnReset.addEventListener('click', ()=>{ revealed=false; fitCanvas(); paintAll(); });
+    btnToggle.addEventListener('click', toggleAll);
+
+    // 加载
+    let loaded=0;
+    const onload=()=>{ if(++loaded===2){ fitCanvas(); paintAll(); } };
+    baseImg.onload=onload; topImg.onload=onload;
+    baseImg.src=BASE_URL; topImg.src=TOP_URL;
+  })();
+  </script>
+</body>
+</html>
