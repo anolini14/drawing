@@ -17,23 +17,13 @@
     .toolbar{display:flex;gap:.75rem;align-items:center;margin:.5rem 0 12px;}
     .toolbar label{display:flex;gap:.5rem;align-items:center;opacity:.9}
     .toolbar button{
-      padding:.4rem .75rem;
-      border:0;
-      border-radius:.5rem;
-      background:#2b2b31;
-      color:#fff;
-      cursor:pointer;
+      padding:.4rem .75rem;border:0;border-radius:.5rem;
+      background:#2b2b31;color:#fff;cursor:pointer
     }
     .toolbar button:hover{background:#3a3a43}
     #stage{
-      position:relative;
-      width:100%;
-      aspect-ratio:16/9;
-      background:#111;
-      user-select:none;
-      touch-action:none;
-      border-radius:12px;
-      overflow:hidden;
+      position:relative;width:100%;aspect-ratio:16/9;background:#111;
+      user-select:none;touch-action:none;border-radius:12px;overflow:hidden;
       box-shadow:0 6px 24px rgba(0,0,0,.35)
     }
     #cv{position:absolute;inset:0;width:100%;height:100%;display:block}
@@ -60,19 +50,16 @@
 
     <div class="hint">
       在画面上拖动/触摸即可“擦除”显示底图。<br>
-      你可以在仓库中新建 <code>img</code> 文件夹并放入 <code>base.jpg</code> 和 <code>top.png</code>，
-      这两个文件会被自动加载。
+      请将图片放在 <code>img</code> 文件夹内：<code>img/base.jpg</code> 与 <code>img/top.jpg</code>。
     </div>
-    <div class="footer">
-      适用于桌面与移动端；无外部依赖，可直接托管到 GitHub Pages/Netlify/Vercel。
-    </div>
+    <div class="footer">适用于桌面与移动端；无外部依赖，可托管到 GitHub Pages/Netlify/Vercel。</div>
   </div>
 
   <script>
   (function(){
-    // === 从本仓库相对路径加载（不跨域） ===
+    // === 同仓库相对路径（不跨域） ===
     const BASE_URL = "./img/base.jpg"; // 底图
-    const TOP_URL  = "./img/top.jpg";  // 上层图
+    const TOP_URL  = "./img/top.jpg";  // 上层（被擦掉）
 
     const cv = document.getElementById('cv');
     const ctx = cv.getContext('2d');
@@ -95,6 +82,7 @@
       ctx.setTransform(r,0,0,r,0,0);
     }
 
+    // 将图片按 "cover" 方式绘制到画布大小
     function drawCover(img){
       const rect = stage.getBoundingClientRect();
       const W = rect.width, H = rect.height;
@@ -106,6 +94,7 @@
       ctx.drawImage(img, dx, dy, dw, dh);
     }
 
+    // 一次性把 top 盖上、base 垫底（初始化/重置用）
     function paintAll(){
       ctx.globalCompositeOperation = 'source-over';
       ctx.clearRect(0,0,cv.width,cv.height);
@@ -113,6 +102,14 @@
       ctx.globalCompositeOperation = 'destination-over';
       drawCover(baseImg);
       updatePercent();
+    }
+
+    // ★ 关键：在当前内容“下面”补画底图（保证擦掉 top 后能看到 base）
+    function drawBaseUnder(){
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-over';
+      drawCover(baseImg);
+      ctx.restore();
     }
 
     function getPos(e){
@@ -129,7 +126,8 @@
       drawing=true;
       const {x,y}=getPos(e);
       lastX=x; lastY=y;
-      eraseDot(x,y);
+      eraseDot(x,y);        // 擦一个点
+      drawBaseUnder();      // ★ 补画底图到透明区域下方
     }
 
     function move(e){
@@ -141,6 +139,8 @@
       ctx.lineWidth=Number(brush.value);
       ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(x,y); ctx.stroke();
       ctx.restore();
+
+      drawBaseUnder();      // ★ 每次擦线后都补画底图
       lastX=x; lastY=y;
     }
 
@@ -159,19 +159,18 @@
       const rect = stage.getBoundingClientRect();
       ctx.globalCompositeOperation='source-over';
       if(!revealed){
-        ctx.clearRect(0,0,rect.width,rect.height);
+        ctx.clearRect(0,0,rect.width,rect.height); // 全部透明（等同全擦）
         revealed=true;
       }else{
-        paintAll();
-        revealed=false;
+        paintAll(); revealed=false;
       }
       updatePercent();
     }
 
-    // 估算擦除比例
+    // 估算擦除比例（降采样）
     function updatePercent(){
       const r=dpr();
-      const w=Math.floor(cv.width/r),h=Math.floor(cv.height/r);
+      const w=Math.floor(cv.width/r), h=Math.floor(cv.height/r);
       const step=8;
       const data=ctx.getImageData(0,0,w,h).data;
       let transparent=0,total=0;
@@ -186,7 +185,7 @@
     }
     const throttleUpdate=throttle(updatePercent,200);
     function throttle(fn,delay){
-      let t=0; return(...args)=>{const n=performance.now();if(n-t>delay){t=n;fn(...args);}};
+      let t=0; return(...args)=>{const n=performance.now(); if(n-t>delay){t=n; fn(...args);} };
     }
 
     // 事件
@@ -196,8 +195,8 @@
     cv.addEventListener('touchstart',start,{passive:false});
     cv.addEventListener('touchmove',move,{passive:false});
     cv.addEventListener('touchend',end);
-    window.addEventListener('resize',()=>{fitCanvas();paintAll();});
-    btnReset.addEventListener('click',()=>{revealed=false;fitCanvas();paintAll();});
+    window.addEventListener('resize',()=>{ fitCanvas(); paintAll(); });
+    btnReset.addEventListener('click',()=>{ revealed=false; fitCanvas(); paintAll(); });
     btnToggle.addEventListener('click',toggleAll);
 
     // 图片加载
@@ -206,7 +205,7 @@
       pct.textContent='❌ 图片加载失败';
     }
     let loaded=0;
-    const onload=()=>{if(++loaded===2){fitCanvas();paintAll();}};
+    const onload=()=>{ if(++loaded===2){ fitCanvas(); paintAll(); } };
     baseImg.onload=onload; topImg.onload=onload;
     baseImg.onerror=()=>showError('底图',BASE_URL);
     topImg.onerror=()=>showError('上层',TOP_URL);
