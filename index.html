@@ -3,14 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>擦除查看（Scratch to Reveal）Demo</title>
+  <title>擦除查看（爱心笔刷）</title>
   <style>
     :root{--maxw: 900px;}
     body{
       margin:0;
       font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans",sans-serif;
-      background:#0e0e10;
-      color:#e8e8ea;
+      background:#0e0e10;color:#e8e8ea;
     }
     .wrap{max-width:var(--maxw);margin:24px auto;padding:0 16px;}
     h1{font-size:20px;margin:0 0 12px;}
@@ -22,22 +21,21 @@
     }
     .toolbar button:hover{background:#3a3a43}
     #stage{
-      position:relative;width:100%;aspect-ratio:16/9;background:#111;
-      user-select:none;touch-action:none;border-radius:12px;overflow:hidden;
-      box-shadow:0 6px 24px rgba(0,0,0,.35)
+      position:relative;width:100%;
+      /* aspect-ratio 将在图片加载后动态设置为 base 的比例 */
+      background:#111;user-select:none;touch-action:none;
+      border-radius:12px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.35)
     }
     #cv{position:absolute;inset:0;width:100%;height:100%;display:block}
-    .hint{opacity:.75;margin-top:8px;font-size:14px}
-    .footer{opacity:.55;font-size:12px;margin-top:14px}
     a{color:#9ecbff}
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>擦除查看（Scratch to Reveal）</h1>
+    <h1>擦除查看（爱心笔刷）</h1>
     <div class="toolbar">
-      <label>笔刷半径
-        <input id="brush" type="range" min="10" max="120" value="48">
+      <label>笔刷大小
+        <input id="brush" type="range" min="16" max="160" value="72">
       </label>
       <button id="reset" type="button">重置</button>
       <button id="toggle" type="button">一键全显/全隐</button>
@@ -47,19 +45,13 @@
     <div id="stage">
       <canvas id="cv"></canvas>
     </div>
-
-    <div class="hint">
-      在画面上拖动/触摸即可“擦除”显示底图。<br>
-      请将图片放在 <code>img</code> 文件夹内：<code>img/base.jpg</code> 与 <code>img/top.jpg</code>。
-    </div>
-    <div class="footer">适用于桌面与移动端；无外部依赖，可托管到 GitHub Pages/Netlify/Vercel。</div>
   </div>
 
   <script>
   (function(){
     // === 同仓库相对路径（不跨域） ===
-    const BASE_URL = "./img/base.jpg"; // 底图
-    const TOP_URL  = "./img/top.jpg";  // 上层（被擦掉）
+    const BASE_URL = "./img/base.jpg"; // 底图（例如 700x1024 竖图）
+    const TOP_URL  = "./img/top.jpg";  // 上层（被擦除显示底图；可换成 ./img/top.png）
 
     const cv = document.getElementById('cv');
     const ctx = cv.getContext('2d');
@@ -69,11 +61,15 @@
     const btnToggle = document.getElementById('toggle');
     const pct = document.getElementById('pct');
 
-    let baseImg = new Image(), topImg = new Image();
+    const baseImg = new Image();
+    const topImg  = new Image();
+
     let drawing=false, lastX=0, lastY=0, revealed=false;
+    let baseRatio = 16/9; // 将在底图加载后改成 base 的自然宽高比
 
     function dpr(){ return window.devicePixelRatio || 1; }
 
+    // 根据容器 CSS 尺寸与 DPR 设置画布像素尺寸
     function fitCanvas(){
       const r = dpr();
       const rect = stage.getBoundingClientRect();
@@ -82,7 +78,7 @@
       ctx.setTransform(r,0,0,r,0,0);
     }
 
-    // 将图片按 "cover" 方式绘制到画布大小
+    // 将图片以 "cover" 方式铺满当前画布（不变形）
     function drawCover(img){
       const rect = stage.getBoundingClientRect();
       const W = rect.width, H = rect.height;
@@ -94,7 +90,7 @@
       ctx.drawImage(img, dx, dy, dw, dh);
     }
 
-    // 一次性把 top 盖上、base 垫底（初始化/重置用）
+    // 初始化/重置：上层盖住、底图垫底
     function paintAll(){
       ctx.globalCompositeOperation = 'source-over';
       ctx.clearRect(0,0,cv.width,cv.height);
@@ -104,12 +100,51 @@
       updatePercent();
     }
 
-    // ★ 关键：在当前内容“下面”补画底图（保证擦掉 top 后能看到 base）
+    // 在当前内容“下面”补画底图（保证擦掉 top 后能看到 base）
     function drawBaseUnder(){
       ctx.save();
       ctx.globalCompositeOperation = 'destination-over';
       drawCover(baseImg);
       ctx.restore();
+    }
+
+    //——— 爱心路径 ———
+    // 以 (0,0) 为中心、size 为整体尺寸（像素），angle 为旋转角（弧度）
+    function drawHeartPath(size){
+      const s = size/2; // 尺度控制
+      ctx.beginPath();
+      // 经典两段贝塞尔心形（上尖下圆）
+      ctx.moveTo(0, -s*0.55);
+      ctx.bezierCurveTo( s*0.9, -s*1.35,  s*1.6, -s*0.05,  0,  s*0.9);
+      ctx.bezierCurveTo(-s*1.6, -s*0.05, -s*0.9, -s*1.35,  0, -s*0.55);
+    }
+
+    // 擦一个爱心（使用 destination-out 填充）
+    function eraseHeart(x, y, size, angleRad){
+      ctx.save();
+      ctx.translate(x, y);
+      if (angleRad) ctx.rotate(angleRad);
+      ctx.globalCompositeOperation = 'destination-out';
+      drawHeartPath(size);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // 在两点之间按间距“连点成线”地盖章爱心
+    function stampHearts(x1, y1, x2, y2){
+      const size = Number(brush.value);
+      const dx = x2 - x1, dy = y2 - y1;
+      const dist = Math.hypot(dx, dy) || 0.0001;
+      const step = size * 0.6; // 印章间距（越小越密）
+      const steps = Math.max(1, Math.floor(dist / step));
+      const angle = Math.atan2(dy, dx); // 沿轨迹方向轻微旋转
+      for (let i = 0; i <= steps; i++){
+        const t = i / steps;
+        const x = x1 + dx * t;
+        const y = y1 + dy * t;
+        eraseHeart(x, y, size, angle);
+      }
+      drawBaseUnder(); // 补画底图
     }
 
     function getPos(e){
@@ -123,43 +158,30 @@
 
     function start(e){
       e.preventDefault();
-      drawing=true;
-      const {x,y}=getPos(e);
-      lastX=x; lastY=y;
-      eraseDot(x,y);        // 擦一个点
-      drawBaseUnder();      // ★ 补画底图到透明区域下方
+      drawing = true;
+      const {x,y} = getPos(e);
+      lastX = x; lastY = y;
+      eraseHeart(x, y, Number(brush.value), 0);
+      drawBaseUnder();
     }
 
     function move(e){
-      if(!drawing) return;
-      const {x,y}=getPos(e);
-      ctx.save();
-      ctx.globalCompositeOperation='destination-out';
-      ctx.lineCap='round'; ctx.lineJoin='round';
-      ctx.lineWidth=Number(brush.value);
-      ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(x,y); ctx.stroke();
-      ctx.restore();
-
-      drawBaseUnder();      // ★ 每次擦线后都补画底图
-      lastX=x; lastY=y;
+      if (!drawing) return;
+      const {x,y} = getPos(e);
+      stampHearts(lastX, lastY, x, y);
+      lastX = x; lastY = y;
     }
 
-    function end(){ drawing=false; throttleUpdate(); }
-
-    function eraseDot(x,y){
-      ctx.save();
-      ctx.globalCompositeOperation='destination-out';
-      ctx.beginPath();
-      ctx.arc(x,y,Number(brush.value)/2,0,Math.PI*2);
-      ctx.fill();
-      ctx.restore();
+    function end(){
+      drawing = false;
+      throttleUpdate();
     }
 
     function toggleAll(){
       const rect = stage.getBoundingClientRect();
       ctx.globalCompositeOperation='source-over';
       if(!revealed){
-        ctx.clearRect(0,0,rect.width,rect.height); // 全部透明（等同全擦）
+        ctx.clearRect(0,0,rect.width,rect.height); // 全透明（等同全擦）
         revealed=true;
       }else{
         paintAll(); revealed=false;
@@ -169,48 +191,56 @@
 
     // 估算擦除比例（降采样）
     function updatePercent(){
-      const r=dpr();
-      const w=Math.floor(cv.width/r), h=Math.floor(cv.height/r);
-      const step=8;
-      const data=ctx.getImageData(0,0,w,h).data;
-      let transparent=0,total=0;
+      const r = dpr();
+      const w = Math.floor(cv.width / r), h = Math.floor(cv.height / r);
+      const step = 8;
+      const data = ctx.getImageData(0,0,w,h).data;
+      let transparent=0, total=0;
       for(let y=0;y<h;y+=step){
         for(let x=0;x<w;x+=step){
-          const a=data[((y*w)+x)*4+3];
-          total++; if(a<8) transparent++;
+          const a = data[((y*w)+x)*4 + 3];
+          total++; if(a < 8) transparent++;
         }
       }
-      const per=Math.round(transparent/total*100);
-      pct.textContent=`已擦除 ${per}%`;
+      const per = Math.round(transparent/total*100);
+      pct.textContent = `已擦除 ${per}%`;
     }
-    const throttleUpdate=throttle(updatePercent,200);
-    function throttle(fn,delay){
-      let t=0; return(...args)=>{const n=performance.now(); if(n-t>delay){t=n; fn(...args);} };
-    }
+    const throttleUpdate = (function(){ let t=0; return function(){ const n=performance.now(); if(n-t>200){ t=n; updatePercent(); } }; })();
 
-    // 事件
-    cv.addEventListener('pointerdown',start);
-    cv.addEventListener('pointermove',move);
-    window.addEventListener('pointerup',end);
-    cv.addEventListener('touchstart',start,{passive:false});
-    cv.addEventListener('touchmove',move,{passive:false});
-    cv.addEventListener('touchend',end);
-    window.addEventListener('resize',()=>{ fitCanvas(); paintAll(); });
-    btnReset.addEventListener('click',()=>{ revealed=false; fitCanvas(); paintAll(); });
-    btnToggle.addEventListener('click',toggleAll);
+    // 事件绑定
+    cv.addEventListener('pointerdown', start);
+    cv.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    cv.addEventListener('touchstart', start, {passive:false});
+    cv.addEventListener('touchmove', move, {passive:false});
+    cv.addEventListener('touchend', end);
+    window.addEventListener('resize', ()=>{ fitCanvas(); paintAll(); });
+    btnReset.addEventListener('click', ()=>{ revealed=false; fitCanvas(); paintAll(); });
+    btnToggle.addEventListener('click', toggleAll);
+
+    // 底图加载后，按底图自然比例设置容器 aspect-ratio
+    function setAspectByBase(){
+      const w = baseImg.naturalWidth || 16;
+      const h = baseImg.naturalHeight || 9;
+      baseRatio = w / h;
+      stage.style.aspectRatio = `${w} / ${h}`;
+    }
 
     // 图片加载
-    function showError(which,url){
-      console.error(`图片加载失败: ${which} (${url})`);
-      pct.textContent='❌ 图片加载失败';
-    }
-    let loaded=0;
-    const onload=()=>{ if(++loaded===2){ fitCanvas(); paintAll(); } };
-    baseImg.onload=onload; topImg.onload=onload;
-    baseImg.onerror=()=>showError('底图',BASE_URL);
-    topImg.onerror=()=>showError('上层',TOP_URL);
-    baseImg.src=BASE_URL;
-    topImg.src=TOP_URL;
+    let loaded = 0;
+    const onload = ()=>{
+      if (++loaded === 2){
+        setAspectByBase();   // 依据底图尺寸设置容器比例（如 700/1024）
+        fitCanvas();
+        paintAll();
+      }
+    };
+    baseImg.onload = onload;
+    topImg.onload  = onload;
+    baseImg.onerror = ()=>{ pct.textContent='❌ 底图加载失败'; console.error('底图加载失败', BASE_URL); };
+    topImg.onerror  = ()=>{ pct.textContent='❌ 上层加载失败'; console.error('上层加载失败', TOP_URL); };
+    baseImg.src = BASE_URL;
+    topImg.src  = TOP_URL;
   })();
   </script>
 </body>
